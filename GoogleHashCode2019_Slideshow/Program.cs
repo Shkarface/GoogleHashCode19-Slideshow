@@ -3,6 +3,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace GoogleHashCode2019_Slideshow
@@ -136,7 +137,7 @@ namespace GoogleHashCode2019_Slideshow
                 slideIndex++;
                 Photo next = GetNextPhoto(i, slide1.Tags);
                 if (next == null)
-                    break;
+                    continue;
                 next.IsUsed = true;
                 if (next.IsHorizontal)
                 {
@@ -153,7 +154,10 @@ namespace GoogleHashCode2019_Slideshow
                 slideIndex++;
             }
 
-            Console.WriteLine($"Processing Time: {Stopwatch.ElapsedMilliseconds.ToString("n0")} ms");
+            if (Stopwatch.ElapsedMilliseconds < 1000)
+                Console.WriteLine($"Processing Time: {Stopwatch.ElapsedMilliseconds} ms");
+            else
+                Console.WriteLine($"Processing Time: {Stopwatch.Elapsed.TotalSeconds.ToString("f2")} seconds");
         }
         public static void WriteOutput()
         {
@@ -162,8 +166,7 @@ namespace GoogleHashCode2019_Slideshow
             int totalScore = 0;
             using (FileStream fs = File.OpenWrite(OutputFile))
             {
-                byte[] byteArray =
-                    new System.Text.UTF8Encoding(true).GetBytes($"{SlidesCount}");
+                byte[] byteArray = new System.Text.UTF8Encoding(true).GetBytes($"{SlidesCount}");
                 fs.Write(byteArray, 0, byteArray.Length);
                 for (int slideIndex = 0; slideIndex < SlidesCount; slideIndex++)
                 {
@@ -174,8 +177,7 @@ namespace GoogleHashCode2019_Slideshow
                     }
                     if (Slides[slideIndex] == null)
                         break;
-                    byteArray =
-                    new System.Text.UTF8Encoding(true).GetBytes($"{Environment.NewLine}{Slides[slideIndex].ID}");
+                    byteArray = new UTF8Encoding(true).GetBytes($"{Environment.NewLine}{Slides[slideIndex].ID}");
                     fs.Write(byteArray, 0, byteArray.Length);
                 }
             }
@@ -198,19 +200,38 @@ namespace GoogleHashCode2019_Slideshow
             private static Photo GetNextPhoto(int startAt, string[] intersect = null, string[] different = null)
 #endif
         {
-            for (int i = startAt; i < PhotosCount; i++)
-            {
-                if (Photos[i].IsUsed)
-                    continue;
-                if (intersect != null)
-                {
-                    var intersectionCount = Photos[i].Tags.Intersect(intersect).Count();
-                    if (intersectionCount == 0 || intersectionCount == intersect.Length)
-                        continue;
-                }
 
-                return Photos[i];
+            if (intersect != null || different != null)
+            {
+                Photo photo = null;
+                object _lock = new object();
+                Parallel.For(startAt + 1, PhotosCount, (i, loopState) =>
+                {
+                    if (photo != null)
+                        loopState.Stop();
+                    if (Photos[i].IsUsed)
+                        return;
+                    if (intersect != null)
+                    {
+                        var intersectionCount = Photos[i].Tags.Intersect(intersect).Count();
+                        if (intersectionCount == 0 || intersectionCount == intersect.Length)
+                            return;
+                    }
+                    lock (_lock)
+                    {
+                        photo = Photos[i];
+                    }
+                });
+                return photo;
             }
+            else
+                for (int i = startAt + 1; i < PhotosCount; i++)
+                {
+                    if (Photos[i].IsUsed)
+                        continue;
+
+                    return Photos[i];
+                }
             return null;
         }
         private static int GetTransitionScore(Slide slide1, Slide slide2)
