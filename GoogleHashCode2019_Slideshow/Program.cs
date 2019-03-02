@@ -1,5 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
+﻿#define HASHED_TAGS
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -72,46 +72,36 @@ namespace GoogleHashCode2019_Slideshow
 
                 Photos = new Photo[PhotosCount];
                 photoData = new string[PhotosCount];
-                if (PhotosCount >= 200)
-                    for (int id = 0; id < PhotosCount; id++)
-                        photoData[id] = sr.ReadLine();
-                else
-                    for (int id = 0; id < PhotosCount; id++)
-                    {
-                        string[] config = sr.ReadLine().Split(' ');
-                        bool isHorizontal = config[0] == "H";
-                        int tagCount = int.Parse(config[1]);
-                        string[] tagIndeces = new string[tagCount];
 
-                        for (int i = 0; i < tagCount; i++)
-                            tagIndeces[i] = config[2 + i];
-
-                        var photo = new Photo(id, isHorizontal, tagIndeces);
-                        Photos[id] = photo;
-                        if (photo.IsHorizontal)
-                            HorizontalPhotosCount++;
-                    }
+                for (int id = 0; id < PhotosCount; id++)
+                    photoData[id] = sr.ReadLine();
             }
 
-            if (PhotosCount >= 200)
+
+            bool[] horizontal = new bool[PhotosCount];
+            Parallel.For(0, PhotosCount, (int id) =>
             {
-                bool[] horizontal = new bool[PhotosCount];
-                Parallel.For(0, PhotosCount, (int id) =>
-                {
-                    string[] config = photoData[id].Split(' ');
-                    bool isHorizontal = config[0] == "H";
-                    int tagCount = int.Parse(config[1]);
-                    string[] tagIndeces = new string[tagCount];
+                string[] config = photoData[id].Split(' ');
+                bool isHorizontal = config[0] == "H";
+                int tagCount = int.Parse(config[1]);
+#if HASHED_TAGS
+                int[] tags = new int[tagCount];
+#else
+                string[] tags = new string[tagCount];
+#endif
+                for (int i = 0; i < tagCount; i++)
+#if HASHED_TAGS
+                    tags[i] = config[2 + i].GetHashCode();
+#else
+                    tags[i] = config[2 + i];
+#endif
 
-                    for (int i = 0; i < tagCount; i++)
-                        tagIndeces[i] = config[2 + i];
+                var photo = new Photo(id, isHorizontal, tags);
+                Photos[id] = photo;
+                horizontal[id] = isHorizontal;
+            });
+            HorizontalPhotosCount = horizontal.Where(b => b).Count();
 
-                    var photo = new Photo(id, isHorizontal, tagIndeces);
-                    Photos[id] = photo;
-                    horizontal[id] = isHorizontal;
-                });
-                HorizontalPhotosCount = horizontal.Where(b => b).Count();
-            }
             SlidesCount = (VerticalPhotosCount / 2) + HorizontalPhotosCount;
             Console.WriteLine($"PhotosCount: {PhotosCount.ToString("n0")}");
             Console.WriteLine($"SlidesCount: {SlidesCount.ToString("n0")}");
@@ -194,28 +184,6 @@ namespace GoogleHashCode2019_Slideshow
             Console.WriteLine($"Final Score: {totalScore.ToString("n0")}");
         }
 
-        private static List<Photo> FindPhotosWithTagSet(string[] tagIndexSet, bool contains)
-        {
-            var photos = new List<Photo>();
-            for (int i = 0; i < tagIndexSet.Length; i++)
-            {
-                photos.AddRange(FindPhotosWithTag(tagIndexSet[i], contains));
-            }
-            return photos;
-        }
-        private static List<Photo> FindPhotosWithTag(string tagIndex, bool contains)
-        {
-            var photos = new List<Photo>();
-            if (contains)
-            {
-                photos.AddRange(Photos.Where(p => p.Tags.Contains(tagIndex)));
-            }
-            else
-            {
-                photos.AddRange(Photos.Where(p => !p.Tags.Contains(tagIndex)));
-            }
-            return photos;
-        }
         private static Photo GetNextVerticalPhoto(int startAt)
         {
             for (int i = startAt; i < PhotosCount; i++)
@@ -225,7 +193,11 @@ namespace GoogleHashCode2019_Slideshow
             }
             return null;
         }
-        private static Photo GetNextPhoto(int startAt, string[] intersect = null, string[] different = null)
+#if HASHED_TAGS
+        private static Photo GetNextPhoto(int startAt, int[] intersect = null, int[] different = null)
+#else
+            private static Photo GetNextPhoto(int startAt, string[] intersect = null, string[] different = null)
+#endif
         {
             for (int i = startAt; i < PhotosCount; i++)
             {
@@ -261,14 +233,23 @@ namespace GoogleHashCode2019_Slideshow
             public bool IsUsed { get; set; }
             public bool IsHorizontal { get; private set; }
             public int ID { get; private set; }
+#if HASHED_TAGS
+            public int[] Tags { get; private set; }
+            public Photo(int id, bool isHorizontal, int[] tags)
+            {
+                ID = id;
+                IsHorizontal = isHorizontal;
+                Tags = tags;
+            }
+#else
             public string[] Tags { get; private set; }
-
             public Photo(int id, bool isHorizontal, string[] tags)
             {
                 ID = id;
                 IsHorizontal = isHorizontal;
                 Tags = tags;
             }
+#endif
         }
 
         public class Slide
@@ -277,15 +258,25 @@ namespace GoogleHashCode2019_Slideshow
             public Photo Photo2 { get; private set; }
 
             public string ID { get; private set; }
-            public string[] Tags { get; private set; }
 
+#if HASHED_TAGS
+            public int[] Tags { get; private set; }
+#else
+            public string[] Tags { get; private set; }
+#endif
             public Slide(Photo photo)
             {
                 Photo1 = photo ?? throw new NullReferenceException();
+                ID = photo.ID.ToString();
+#if HASHED_TAGS
+                Tags = new int[Photo1.Tags.Length];
+                for (int i = 0; i < Photo1.Tags.Length; i++)
+                    Tags[i] = Photo1.Tags[i];
+#else
                 Tags = new string[Photo1.Tags.Length];
                 for (int i = 0; i < Photo1.Tags.Length; i++)
                     Tags[i] = Photo1.Tags[i];
-                ID = photo.ID.ToString();
+#endif
             }
 
             public Slide(Photo photo1, Photo photo2)
@@ -295,14 +286,20 @@ namespace GoogleHashCode2019_Slideshow
 
                 if (Photo1.IsHorizontal || Photo2.IsHorizontal)
                     throw new InvalidOperationException("Only vertical photos can be combined.");
-
+                ID = $"{photo1.ID} {photo2.ID}";
+#if HASHED_TAGS
+                Tags = new int[Photo1.Tags.Length + Photo2.Tags.Length];
+                for (int i = 0; i < Photo1.Tags.Length; i++)
+                    Tags[i] = Photo1.Tags[i];
+                for (int i = 0; i < Photo2.Tags.Length; i++)
+                    Tags[Photo1.Tags.Length + i] = Photo2.Tags[i];
+#else
                 Tags = new string[Photo1.Tags.Length + Photo2.Tags.Length];
                 for (int i = 0; i < Photo1.Tags.Length; i++)
                     Tags[i] = Photo1.Tags[i];
                 for (int i = 0; i < Photo2.Tags.Length; i++)
                     Tags[Photo1.Tags.Length + i] = Photo2.Tags[i];
-
-                ID = $"{photo1.ID} {photo2.ID}";
+#endif
             }
         }
     }
