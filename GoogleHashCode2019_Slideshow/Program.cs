@@ -88,6 +88,8 @@ namespace GoogleHashCode2019_Slideshow
 
                         var photo = new Photo(id, isHorizontal, tagIndeces);
                         Photos[id] = photo;
+                        if (photo.IsHorizontal)
+                            HorizontalPhotosCount++;
                     }
             }
 
@@ -143,7 +145,7 @@ namespace GoogleHashCode2019_Slideshow
                 i++;
                 Slides[slideIndex] = slide1;
                 slideIndex++;
-                Photo next = GetNextPhoto(i, new string[] { current.Tags[0] });
+                Photo next = GetNextPhoto(i);
                 if (next == null)
                     break;
                 next.IsUsed = true;
@@ -223,12 +225,18 @@ namespace GoogleHashCode2019_Slideshow
             }
             return null;
         }
-        private static Photo GetNextPhoto(int startAt, string[] tags)
+        private static Photo GetNextPhoto(int startAt, string[] intersect = null, string[] different = null)
         {
             for (int i = startAt; i < PhotosCount; i++)
             {
                 if (Photos[i].IsUsed)
                     continue;
+                if (intersect != null)
+                {
+                    var intersectionCount = Photos[i].Tags.Intersect(intersect).Count();
+                    if (intersectionCount == 0 || intersectionCount == intersect.Length)
+                        continue;
+                }
 
                 return Photos[i];
             }
@@ -237,8 +245,8 @@ namespace GoogleHashCode2019_Slideshow
         private static int GetTransitionScore(Slide slide1, Slide slide2)
         {
             int common = slide1.Tags.Intersect(slide2.Tags).Count();
-            int left = slide1.Tags.Count - common;
-            int right = slide2.Tags.Count - common;
+            int left = slide1.Tags.Length - common;
+            int right = slide2.Tags.Length - common;
 
             if (left < common)
                 common = left;
@@ -269,12 +277,14 @@ namespace GoogleHashCode2019_Slideshow
             public Photo Photo2 { get; private set; }
 
             public string ID { get; private set; }
-            public List<string> Tags { get; private set; }
+            public string[] Tags { get; private set; }
 
             public Slide(Photo photo)
             {
                 Photo1 = photo ?? throw new NullReferenceException();
-                Tags = new List<string>(Photo1.Tags);
+                Tags = new string[Photo1.Tags.Length];
+                for (int i = 0; i < Photo1.Tags.Length; i++)
+                    Tags[i] = Photo1.Tags[i];
                 ID = photo.ID.ToString();
             }
 
@@ -286,9 +296,11 @@ namespace GoogleHashCode2019_Slideshow
                 if (Photo1.IsHorizontal || Photo2.IsHorizontal)
                     throw new InvalidOperationException("Only vertical photos can be combined.");
 
-                Tags = new List<string>(photo1.Tags.Length + photo2.Tags.Length);
-                Tags.AddRange(photo1.Tags);
-                Tags.AddRange(photo2.Tags);
+                Tags = new string[Photo1.Tags.Length + Photo2.Tags.Length];
+                for (int i = 0; i < Photo1.Tags.Length; i++)
+                    Tags[i] = Photo1.Tags[i];
+                for (int i = 0; i < Photo2.Tags.Length; i++)
+                    Tags[Photo1.Tags.Length + i] = Photo2.Tags[i];
 
                 ID = $"{photo1.ID} {photo2.ID}";
             }
