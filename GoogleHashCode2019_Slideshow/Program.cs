@@ -1,4 +1,5 @@
-﻿#define HASHED_TAGS
+﻿#define HASHED_TAGS 
+#define DISTINCT_TAGS
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -28,6 +29,7 @@ namespace GoogleHashCode2019_Slideshow
         public static int HorizontalPhotosCount { get; private set; }
         public static int SlidesCount { get; private set; }
         public static string Filename { get; private set; }
+        public static readonly object ThreadLock = new object();
         public static Stopwatch Stopwatch { get; private set; } = new Stopwatch();
         public static Photo[] Photos;
         public static Slide[] Slides;
@@ -129,13 +131,13 @@ namespace GoogleHashCode2019_Slideshow
                 }
                 else
                 {
-                    Photo nextVertical = GetNextVerticalPhoto(i);
+                    Photo nextVertical = GetNextVerticalPhoto(i + 1);
                     nextVertical.IsUsed = true;
                     slide1 = new Slide(current, nextVertical);
                 }
                 Slides[slideIndex] = slide1;
                 slideIndex++;
-                Photo next = GetNextPhoto(i, slide1.Tags);
+                Photo next = GetNextPhoto(i + 1, slide1.Tags);
                 if (next == null)
                     continue;
                 next.IsUsed = true;
@@ -145,7 +147,7 @@ namespace GoogleHashCode2019_Slideshow
                 }
                 else
                 {
-                    Photo nextVertical = GetNextVerticalPhoto(i);
+                    Photo nextVertical = GetNextVerticalPhoto(i + 1);
 
                     nextVertical.IsUsed = true;
                     slide2 = new Slide(next, nextVertical);
@@ -204,7 +206,9 @@ namespace GoogleHashCode2019_Slideshow
             if (intersect != null || different != null)
             {
                 Photo photo = null;
-                object _lock = new object();
+                int intersectionLength = intersect.Length;
+                int minIntersect = intersectionLength / 4;
+                int maxIntersect = intersectionLength - minIntersect;
                 Parallel.For(startAt + 1, PhotosCount, (i, loopState) =>
                 {
                     if (photo != null)
@@ -214,10 +218,10 @@ namespace GoogleHashCode2019_Slideshow
                     if (intersect != null)
                     {
                         var intersectionCount = Photos[i].Tags.Intersect(intersect).Count();
-                        if (intersectionCount == 0 || intersectionCount == intersect.Length)
+                        if (intersectionCount < minIntersect || intersectionCount > maxIntersect)
                             return;
                     }
-                    lock (_lock)
+                    lock (ThreadLock)
                     {
                         photo = Photos[i];
                     }
@@ -225,7 +229,7 @@ namespace GoogleHashCode2019_Slideshow
                 return photo;
             }
             else
-                for (int i = startAt + 1; i < PhotosCount; i++)
+                for (int i = startAt; i < PhotosCount; i++)
                 {
                     if (Photos[i].IsUsed)
                         continue;
@@ -308,11 +312,18 @@ namespace GoogleHashCode2019_Slideshow
                     throw new InvalidOperationException("Only vertical photos can be combined.");
                 ID = $"{photo1.ID} {photo2.ID}";
 #if HASHED_TAGS
+#if DISTINCT_TAGS
+                var tagList = new System.Collections.Generic.List<int>(Math.Max(Photo1.Tags.Length, Photo2.Tags.Length));
+                tagList.AddRange(Photo1.Tags);
+                tagList.AddRange(Photo2.Tags);
+                Tags = tagList.Distinct().ToArray();
+#else
                 Tags = new int[Photo1.Tags.Length + Photo2.Tags.Length];
                 for (int i = 0; i < Photo1.Tags.Length; i++)
                     Tags[i] = Photo1.Tags[i];
                 for (int i = 0; i < Photo2.Tags.Length; i++)
                     Tags[Photo1.Tags.Length + i] = Photo2.Tags[i];
+#endif
 #else
                 Tags = new string[Photo1.Tags.Length + Photo2.Tags.Length];
                 for (int i = 0; i < Photo1.Tags.Length; i++)
