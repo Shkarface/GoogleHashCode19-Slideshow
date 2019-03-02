@@ -132,10 +132,9 @@ namespace GoogleHashCode2019_Slideshow
                     nextVertical.IsUsed = true;
                     slide1 = new Slide(current, nextVertical);
                 }
-                i++;
                 Slides[slideIndex] = slide1;
                 slideIndex++;
-                Photo next = GetNextPhoto(i);
+                Photo next = GetNextPhoto(i, slide1.Tags);
                 if (next == null)
                     break;
                 next.IsUsed = true;
