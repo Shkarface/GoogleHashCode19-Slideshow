@@ -1,5 +1,6 @@
 ﻿#define HASHED_TAGS 
 #define DISTINCT_TAGS
+#define SORT_TAGS
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -28,6 +29,7 @@ namespace GoogleHashCode2019_Slideshow
         public static int PhotosCount { get; private set; }
         public static int HorizontalPhotosCount { get; private set; }
         public static int SlidesCount { get; private set; }
+        public static int FinalScore { get; private set; }
         public static string Filename { get; private set; }
         public static readonly object ThreadLock = new object();
         public static Stopwatch Stopwatch { get; private set; } = new Stopwatch();
@@ -43,11 +45,12 @@ namespace GoogleHashCode2019_Slideshow
                 if (ParseInput(InputFiles[i]))
                 {
                     Process();
-                    WriteOutput();
+                    FinalScore += WriteOutput();
                 }
             }
             stopwatch.Stop();
-            Console.WriteLine($"Overall Took {stopwatch.Elapsed.TotalSeconds.ToString("f2")} seconds");
+            Console.WriteLine($"Overall Score: {FinalScore.ToString("n0")}");
+            Console.WriteLine($"Overall Took {GetElapsedTime(stopwatch)} seconds");
             Console.ReadLine();
         }
 
@@ -98,7 +101,9 @@ namespace GoogleHashCode2019_Slideshow
 #else
                     tags[i] = config[2 + i];
 #endif
-
+#if SORT_TAGS
+                Array.Sort(tags);
+#endif
                 var photo = new Photo(id, isHorizontal, tags);
                 Photos[id] = photo;
                 horizontal[id] = isHorizontal;
@@ -108,7 +113,7 @@ namespace GoogleHashCode2019_Slideshow
             SlidesCount = (VerticalPhotosCount / 2) + HorizontalPhotosCount;
             Console.WriteLine($"PhotosCount: {PhotosCount.ToString("n0")}");
             Console.WriteLine($"SlidesCount: {SlidesCount.ToString("n0")}");
-            Console.WriteLine($"Parsing Time: {Stopwatch.ElapsedMilliseconds.ToString("n0")} ms");
+            Console.WriteLine($"Parsing Time: {GetElapsedTime(Stopwatch)}");
             return true;
         }
         public static void Process()
@@ -156,19 +161,17 @@ namespace GoogleHashCode2019_Slideshow
                 slideIndex++;
             }
 
-            if (Stopwatch.ElapsedMilliseconds < 1000)
-                Console.WriteLine($"Processing Time: {Stopwatch.ElapsedMilliseconds} ms");
-            else
-                Console.WriteLine($"Processing Time: {Stopwatch.Elapsed.TotalSeconds.ToString("f2")} seconds");
+
+            Console.WriteLine($"Processing Time: {GetElapsedTime(Stopwatch)}");
         }
-        public static void WriteOutput()
+        public static int WriteOutput()
         {
             Stopwatch.Restart();
             File.Delete(OutputFile);
             int totalScore = 0;
             using (FileStream fs = File.OpenWrite(OutputFile))
             {
-                byte[] byteArray = new System.Text.UTF8Encoding(true).GetBytes($"{SlidesCount}");
+                byte[] byteArray = new UTF8Encoding(true).GetBytes($"{SlidesCount}");
                 fs.Write(byteArray, 0, byteArray.Length);
                 for (int slideIndex = 0; slideIndex < SlidesCount; slideIndex++)
                 {
@@ -183,10 +186,21 @@ namespace GoogleHashCode2019_Slideshow
                     fs.Write(byteArray, 0, byteArray.Length);
                 }
             }
-            Console.WriteLine($"Output Time: {Stopwatch.ElapsedMilliseconds} ms");
-            Console.WriteLine($"Final Score: {totalScore.ToString("n0")}");
+            Console.WriteLine($"Output Time: {GetElapsedTime(Stopwatch)}");
+            Console.WriteLine($"Set Score: {totalScore.ToString("n0")}");
+            return totalScore;
         }
-
+        private static string GetElapsedTime(Stopwatch stopwatch)
+        {
+            if (stopwatch.ElapsedMilliseconds < 1000)
+                return $"{stopwatch.ElapsedMilliseconds} ms";
+            else if (stopwatch.Elapsed.TotalSeconds < 60)
+                return $"{stopwatch.Elapsed.TotalSeconds.ToString("f2")} seconds";
+            else if (stopwatch.Elapsed.Seconds > 0)
+                return $"{stopwatch.Elapsed.TotalMinutes.ToString("n0")} minutes and {stopwatch.Elapsed.Seconds.ToString("n0")} seconds";
+            else
+                return $"{stopwatch.Elapsed.TotalMinutes.ToString("n0")} minutes";
+        }
         private static Photo GetNextVerticalPhoto(int startAt)
         {
             for (int i = startAt; i < PhotosCount; i++)
@@ -197,35 +211,68 @@ namespace GoogleHashCode2019_Slideshow
             return null;
         }
 #if HASHED_TAGS
-        private static Photo GetNextPhoto(int startAt, int[] intersect = null, int[] different = null)
+        private static Photo GetNextPhoto(int startAt, int[] intersect = null)
 #else
-            private static Photo GetNextPhoto(int startAt, string[] intersect = null, string[] different = null)
+        private static Photo GetNextPhoto(int startAt, string[] intersect = null, string[] different = null)
 #endif
         {
-
-            if (intersect != null || different != null)
+            if (intersect != null)
             {
                 Photo photo = null;
                 int intersectionLength = intersect.Length;
                 int minIntersect = intersectionLength / 4;
+                int minSide = minIntersect / 2;
                 int maxIntersect = intersectionLength - minIntersect;
-                Parallel.For(startAt + 1, PhotosCount, (i, loopState) =>
+                while (photo == null)
                 {
-                    if (photo != null)
-                        loopState.Stop();
-                    if (Photos[i].IsUsed)
-                        return;
-                    if (intersect != null)
+                    Parallel.For(startAt + 1, PhotosCount, (i, loopState) =>
                     {
-                        var intersectionCount = Photos[i].Tags.Intersect(intersect).Count();
-                        if (intersectionCount < minIntersect || intersectionCount > maxIntersect)
+                        if (photo != null)
+                            loopState.Stop();
+                        if (Photos[i].IsUsed)
                             return;
-                    }
-                    lock (ThreadLock)
+
+#if HASHED_TAGS && SORT_TAGS
+                        int intersectionCount = SortedIntArrayIntersectionCount(Photos[i].Tags, intersect);
+#else
+                        int intersectionCount = Photos[i].Tags.Intersect(intersect).Count();
+#endif
+
+                        int leftNotRight = intersectionLength - intersectionCount;
+                        int rightNotLeft = Photos[i].Tags.Length - intersectionCount;
+                        if (intersectionCount < minIntersect || intersectionCount > maxIntersect || leftNotRight < minSide || rightNotLeft < minSide)
+                            return;
+
+                        lock (ThreadLock)
+                        {
+                            photo = Photos[i];
+                        }
+                    });
+                    if (photo == null)
                     {
-                        photo = Photos[i];
+                        if (minIntersect == 0 && maxIntersect == intersectionLength && minSide == 0)
+                        {
+                            for (int i = startAt; i < PhotosCount; i++)
+                            {
+                                if (Photos[i].IsUsed)
+                                    continue;
+
+                                return Photos[i];
+                            }
+                            if (photo == null)
+                                return null;
+                        }
+                        else
+                        {
+                            if (minIntersect > 0)
+                                minIntersect--;
+                            if (maxIntersect < intersectionLength)
+                                maxIntersect++;
+                            if (minSide > 0)
+                                minSide--;
+                        }
                     }
-                });
+                }
                 return photo;
             }
             else
@@ -250,6 +297,30 @@ namespace GoogleHashCode2019_Slideshow
             if (right < common)
                 common = right;
             return common;
+        }
+
+        private static int SortedIntArrayIntersectionCount(int[] array1, int[] array2)
+        {
+            int firstCount = array1.Length;
+            int secondCount = array2.Length;
+            int firstIndex = 0, secondIndex = 0;
+            int intersectionCount = 0;
+
+            while (firstIndex < firstCount && secondIndex < secondCount)
+            {
+                var comp = array1[firstIndex].CompareTo(array2[secondIndex]);
+                if (comp < 0)
+                    ++firstIndex;
+                else if (comp > 0)
+                    ++secondIndex;
+                else
+                {
+                    intersectionCount++;
+                    ++firstIndex;
+                    ++secondIndex;
+                }
+            }
+            return intersectionCount;
         }
 
         public class Photo
