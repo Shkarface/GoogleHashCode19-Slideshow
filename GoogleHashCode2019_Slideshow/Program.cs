@@ -225,7 +225,7 @@ namespace GoogleHashCode2019_Slideshow
                 int maxIntersect = intersectionLength - minIntersect;
                 while (photo == null)
                 {
-                    Parallel.For(startAt + 1, PhotosCount, (i, loopState) =>
+                    Parallel.For(startAt, PhotosCount, (i, loopState) =>
                     {
                         if (photo != null)
                             loopState.Stop();
