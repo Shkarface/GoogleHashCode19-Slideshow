@@ -213,7 +213,7 @@ namespace GoogleHashCode2019_Slideshow
 #if HASHED_TAGS
         private static Photo GetNextPhoto(int startAt, int[] intersect = null)
 #else
-        private static Photo GetNextPhoto(int startAt, string[] intersect = null, string[] different = null)
+        private static Photo GetNextPhoto(int startAt, string[] intersect = null)
 #endif
         {
             if (intersect != null)
